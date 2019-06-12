@@ -1,0 +1,4 @@
+Rscript compileattributes.R
+R CMD build .
+R CMD check .
+R CMD INSTALL .

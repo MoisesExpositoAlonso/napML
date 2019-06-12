@@ -1,0 +1,15 @@
+Package: nap
+Title: Non-Additive Polygenic selection 
+Version: 0.0.0.9000
+Author: Moises Exposito-Alonso
+Maintainer: Moises Exposito-Alonso <moisesexpositoalonso@gemail.com>
+Description: This package carries the data and method from Exposito-Alonso & Nielsen 2018 (unpublised). 
+Depends: R (>= 3.3.1)
+License: MIT
+Encoding: UTF-8
+LazyData: true
+LinkingTo: Rcpp, RcppArmadillo, RcppEigen, BH, bigmemory
+Imports: Rcpp, cowplot, ggplot2, devtools, tidyverse, bigmemory, moiR, data.table
+Suggests: cowplot, coda, latex2exp
+SystemRequirements: C++11
+RoxygenNote: 6.0.1
