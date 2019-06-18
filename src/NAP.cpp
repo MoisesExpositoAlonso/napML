@@ -1,17 +1,14 @@
 #include <stdlib.h>
+#include <cstdio>
+#include <stdio.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <random>
-#include <chrono>
-#include <ctime>
-
-#include <cstdio>
-#include <stdio.h>
 #include <math.h>
 #include <vector>
 #include <list>
-#include <iostream>
 #include <string>
+#include <iostream>
 
 #include <fstream>
 #include <sstream>
@@ -23,11 +20,6 @@
 // when armadillo is loaded, remove this below
 //#include <Rcpp.h>
 #include <RcppArmadillo.h>
-#include <RcppArmadilloExtensions/sample.h>
-#include <RcppEigen.h>
-using namespace Rcpp;
-using namespace std;
-// using namespace arma;
 
 #include <bigmemory/MatrixAccessor.hpp>
 #include <bigmemory/isna.hpp>
@@ -37,7 +29,6 @@ using namespace std;
 // [[Rcpp::depends(bigmemory)]]
 // [[Rcpp::depends(Rcpp)]]
 // [[Rcpp::depends(RcppArmadillo)]]
-// [[Rcpp::depends(RcppEigen)]]
 
 // Enable C++11 via this plugin (Rcpp 0.10.3 or later)
 // [[Rcpp::plugins(cpp11)]]
@@ -55,6 +46,7 @@ const double MIN_NUM = std::numeric_limits<float>::min();
 // # define PI 3.14159265358979323846  /* pi */
 //const double MAX_NUM = std::numeric_limits<float>::max();
 
+double LLMIN = 1.0e+99;
 
 ////////////////////////////////////////////////////////////////////////////////
 /// PLINK
@@ -73,10 +65,10 @@ const double MIN_NUM = std::numeric_limits<float>::min();
 
 
 /* 3 is 11 in binary, we need a 2 bit mask for each of the 4 positions */
-#define MASK0 3	  /* 3 << 2 * 0 */
-#define MASK1 12  /* 3 << 2 * 1 */
-#define MASK2 48  /* 3 << 2 * 2 */
-#define MASK3 192 /* 3 << 2 * 3 */
+#define MASK0 3	  // 3 << 2 * 0 //
+#define MASK1 12  // 3 << 2 * 1 //
+#define MASK2 48  // 3 << 2 * 2 //
+#define MASK3 192 // 3 << 2 * 3 //
 
 #define BUFSIZE 100
 
@@ -173,7 +165,7 @@ int BMreadbed(std::string bedfile,
   // Iterating
 
    // size of packed data, in bytes, per SNP
-   np = (unsigned int)ceil((double)N / (double)PACK_DENSITY);
+   np = (unsigned int)std::ceil((double)N / (double)PACK_DENSITY);
    // std::cout << "Size in bytes of SNP packs is: " << np << std::endl;
    nsnps = len / np;
    in.seekg(3, std::ifstream::beg);
@@ -193,6 +185,7 @@ int BMreadbed(std::string bedfile,
    in.close();
   return 1;
 }
+
 
 // [[Rcpp::export]]
 arma::Mat<double> readbed(std::string bedfile,
@@ -222,7 +215,7 @@ arma::Mat<double> readbed(std::string bedfile,
   ////////////////////////////////////////////////////
   // Iterating
    // size of packed data, in bytes, per SNP
-   np = (unsigned int)ceil((double)N / (double)PACK_DENSITY);
+   np = (unsigned int)std::ceil((double)N / (double)PACK_DENSITY);
    // std::cout << "Size in bytes of SNP packs is: " << np << std::endl;
    nsnps = len / np;
    in.seekg(3, std::ifstream::beg);
@@ -231,12 +224,14 @@ arma::Mat<double> readbed(std::string bedfile,
 
   // Allocate more than the sample size since data must take up whole bytes
    unsigned char* tmp2 = new unsigned char[np * PACK_DENSITY];
+   double val=0;
     for(unsigned int j = 0 ; j < nsnps ; j++){
       arma::vec tmp3(N,  arma::fill::zeros);
       in.read((char*)tmp, sizeof(char) * np);
       decode_plink(tmp2, tmp, np);
         for(unsigned int i = 0 ; i < N ; i++){
-          tmp3[i] = (double)tmp2[i];
+          val=(double)tmp2[i];
+          if(val != PLINK_NA) tmp3[i] = val; // default zeroes
         }
       X.col(j)=tmp3;
     }
@@ -244,16 +239,15 @@ arma::Mat<double> readbed(std::string bedfile,
 
     // Subset matrix
     if(myrows.n_elem == X.n_rows){
-      X=X.cols(mycols-1); // BUG CHECK - position 0 vs 1 in R
+      X=X.cols(mycols-1);
     }else if(mycols.n_elem == X.n_rows){
-      X=X.rows(myrows-1);// BUG CHECK - position 0 vs 1 in R
+      X=X.rows(myrows-1);
     }else{
-      X=X.submat(myrows-1,mycols-1);// BUG CHECK - position 0 vs 1 in R
+      X=X.submat(myrows-1,mycols-1);
     }
 
   return X;
 }
-
 
 
 // [[Rcpp::export]]
@@ -280,7 +274,7 @@ int printbed(std::string bedfile,
   // Iterating
 
    // size of packed data, in bytes, per SNP
-   np = (unsigned int)ceil((double)N / (double)PACK_DENSITY);
+   np = (unsigned int)std::ceil((double)N / (double)PACK_DENSITY);
    std::cout << "Size in bytes of SNP packs is: " << np << std::endl;
    nsnps = len / np;
    in.seekg(3, std::ifstream::beg);
@@ -334,7 +328,7 @@ bool BMsimulate(SEXP A){
       Rcpp::XPtr<BigMatrix> bigMat(A);
       MatrixAccessor<double> macc(*bigMat);
 
-      NumericVector maf = Rcpp::runif( bigMat->ncol(), 0,0.49);
+      Rcpp::NumericVector maf = Rcpp::runif( bigMat->ncol(), 0,0.49);
 
       int i, j;
       for (j = 0; j <bigMat->ncol(); j++) {
@@ -449,7 +443,7 @@ arma::mat Xmvcenter(arma::mat X){
 arma::mat LDrelative(SEXP A, arma::uvec  mycols, bool debug = false){
 
   Rcpp::XPtr<BigMatrix> bigMat(A);
-  if(bigMat->matrix_type() !=8) stop("Big matrix is not of type double");
+  if(bigMat->matrix_type() !=8) Rcpp::stop("Big matrix is not of type double");
 
   // Read the genome matrix from address
   arma::Mat<double> X((double*) bigMat->matrix(), bigMat->nrow(), bigMat->ncol(), false, false);
@@ -705,7 +699,6 @@ double LIKELIHOOD(const arma::vec & y, // worked in previous iteration
                   const double & epi,
                   bool verbose=false,
                   bool printall=false){
-    // double lowest=MIN_NUM/y.n_elem;
     double loglowest= -1e-300/y.n_elem;
     int countinf=0;
     double L=0;
@@ -723,8 +716,8 @@ double LIKELIHOOD(const arma::vec & y, // worked in previous iteration
 }
 
 // [[Rcpp::export]]
-double likelihoodC(const NumericVector &  y,
-                   const NumericVector & w,
+double likelihoodC(const Rcpp::NumericVector &  y,
+                   const Rcpp::NumericVector & w,
                    const double & b,
                    const double & a,
                    const double & p){
@@ -900,161 +893,40 @@ arma::vec ssimC(arma::uvec snps,
 ////////////////////////////////////////////////////////////////////////////////
 /// Spatial Projected Gradient
 ////////////////////////////////////////////////////////////////////////////////
-
+// Modified from E Birgin software Tango
 /* =================================================================
-   File: toyprob.c
-   =================================================================
+Module: Spectral Projected Gradient. Problem definition.
+=================================================================
 
-   =================================================================
-   Module: Spectral Projected Gradient. Problem definition.
-   =================================================================
+Last update of any of the component of this module:
 
-   Last update of any of the component of this module:
+March 14, 2008.
 
-   March 14, 2008.
+Users are encouraged to download periodically updated versions of
+this code at the TANGO Project web page:
 
-   Users are encouraged to download periodically updated versions of
-   this code at the TANGO Project web page:
+www.ime.usp.br/~egbirgin/tango/
 
-   www.ime.usp.br/~egbirgin/tango/
-
-   =================================================================
-   ================================================================= */
+=================================================================
+================================================================= */
 
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #define max(a,b) ((a) > (b) ? (a) : (b))
 
 extern double *l,*u;
 
-
-
-double ptr(double i){ return 1.0+(-log((1.0-i)/(i))) ;}
-double iptr(double i){ return (1.0/(1.0+exp(1.0-i))) ;}
-double iptr05(double i){ return (0.5/(1.0+exp(1.0-i))) ;}
-double seltr(double i){ return 1.0+ log(1.0+i) ;}
-double iseltr(double i){ return exp(i-1.0) -1.0 ;}
-
-
-/***********************************************************************
- **********************************************************************/
-
-// void evalf(int n,double *x,double *f,int *flag) {
-//    int i;
-//
-//   *flag = 0;
-//
-//    *f = 0.0;;
-//    for ( i=0; i<n; i++ )
-//       *f += x[i] * x[i];
-// }
-
-void evalf(int n,double *x,
-           const arma::Mat<double> &X,
-           const arma::vec &y,
-           double epi,
-           double mod,
-           double *f,int *flag) {
-  int i;
-  double b,a,p,mu;
-  arma::vec s(n-4,arma::fill::zeros);
-  arma::vec w;
-
-  *flag = 0;
-
-  // Extract and transform parameters
-  // std::cout << "debug 1" << std::endl;
-  b=iptr(x[n-4]);
-  a=iptr(x[n-3]);
-  p=iptr05(x[n-2]);
-  mu=x[n-1]; // could cause BUG due to start at 0
-  // std::cout << "debug 2" << std::endl;
-  for ( i=0; i<s.n_elem; i++ ){
-    s[i] = iseltr(x[i]);
-  }
-  // std::cout << "debug 3" << std::endl;
-   w = wC(X, s,mod,epi);
-  // std::cout << w << std::endl;
-  *f = 0.0;
-  // std::cout << "debug 4" << std::endl;
-  *f = -likelihoodC(y/mu,w,b,a,p); // Is a mazimizer or minimizer ?
-
-}
-
-/***********************************************************************
- **********************************************************************/
-
-void evalg(int n,double *x,
-           const arma::Mat<double> &X,
-           const arma::vec &y,
-           const double epi,
-           const double mod,
-           double *f,int *flag,
-           double *g,
-           const double eps){
-   int i;
-
-  *flag = 0;
-   // double fref=*f;
-   double fsmall=0.0;
-
-   for ( i=0; i<n; i++ ){
-      x[i] = x[i] + eps; // add stepsize
-      evalf(n,x,X,y,epi,mod,&fsmall,flag); // use pointer but to fsmall
-      g[i] = (fsmall- *f ) / eps;
-      x[i] = x[i] - eps; // add stepsize // remove stepsize
-      // std::cout << g[i] << std::endl;
-   }
-}
-
-
-
-/***********************************************************************
- **********************************************************************/
-
-void proj(int n,double *x,int *flag) {
-   int i;
-
-  *flag = 0;
-
-   for ( i=0; i<n; i++ ) // I do not want box constrints!
-      x[i] = max(l[i], min(x[i], u[i]));
-}
-
-
-
-/* =================================================================
-   File: spg.c
-   =================================================================
-
-   =================================================================
-   Module: Spectral Projected Gradient. Method subroutine.
-   =================================================================
-
-   Last update of any of the component of this module:
-
-   March 14, 2008.
-
-   Users are encouraged to download periodically updated versions of
-   this code at the TANGO Project web page:
-
-   www.ime.usp.br/~egbirgin/tango/
-
-   =================================================================
-   ================================================================= */
-
-/***********************************************************************
- **********************************************************************/
-
-
-
-#define min(a,b) ((a) < (b) ? (a) : (b))
-#define max(a,b) ((a) > (b) ? (a) : (b))
-
 #define gamma 1.0e-04
 
 #define lmax  1.0e+30
 #define lmin  1.0e-30
 #define M     100
+
+double ptr(double i){ return 1.0+(-log((1.0-i)/(i))) ;}
+double iptr(double i){ return (1.0/(1.0+exp(1.0-i))) ;}
+double iptr05(double i){ return (0.5/(1.0+exp(1.0-i))) ;}
+double iptr2(double i){ return (2/(1.0+exp(1.0-i))) ;}
+double seltr(double i){ return 1.0+ log(1.0+i) ;}
+double iseltr(double i){ return exp(i-1.0) -1.0 ;}
 
 
 
@@ -1084,6 +956,32 @@ void reperr(int inform) {
 /***********************************************************************
  **********************************************************************/
 
+void evalf(int n,double *x,
+           const arma::Mat<double> &X,
+           const arma::vec &y,
+           double epi,
+           double mod,
+           double *f,int *flag) {
+  int i;
+  double b,a,p,mu;
+  arma::vec sel(n-4,arma::fill::zeros);
+  arma::vec w;
+
+  *flag = 0;
+
+  // Extract and transform parameters
+  b=iptr(x[n-4]);
+  a=iptr(x[n-3]);
+  p=iptr05(x[n-2]);
+  mu=iptr2(x[n-1]);
+  for ( i=0; i<sel.n_elem; i++ ){
+    sel[i] = iseltr(x[i]);
+  }
+   w = wC(X, sel,mod,epi);
+  *f = 0.0;
+  *f = (-likelihoodC(y/mu,w,b,a,p));
+
+}
 
 void sevalf(int n,double *x,
            const arma::Mat<double> &X,
@@ -1096,8 +994,9 @@ void sevalf(int n,double *x,
   // evalf(n,x,f,&flag);
   evalf(n,x,X,y,epi,mod,f,&flag); // use pointer but to fsmall
 
-   /* This is true if f if Inf, - Inf or NaN */
-   if ( ! ( *f > - 1.0e+99 ) || ! ( *f < 1.0e+99 ) )
+   /* This is true if f if Inf, - Inf or NaN */ // I have already done checks
+   // if ( ! ( *f > - 1.0e+99 ) || ! ( *f < 1.0e+99 ) )
+   //    *f = 1.0e+99;
 
    if ( flag != 0 ) {
       *inform = -90;
@@ -1105,10 +1004,29 @@ void sevalf(int n,double *x,
    }
 }
 
-
 /***********************************************************************
  **********************************************************************/
+void evalg(int n,double *x,
+           const arma::Mat<double> &X,
+           const arma::vec &y,
+           const double epi,
+           const double mod,
+           double *f,int *flag,
+           double *g,
+           const double eps){
+   int i;
 
+  *flag = 0;
+   double fsmall=0.0;
+   const double fref= *f;
+
+   for ( i=0; i<n; i++ ){
+      x[i] = x[i] + eps; // add stepsize
+      evalf(n,x,X,y,epi,mod,&fsmall,flag); // use pointer but to fsmall
+      g[i] = (fsmall- fref ) / eps;
+      x[i] = x[i] - eps; // remove stepsize
+   }
+}
 
 void sevalg (int n,double *x,
              const arma::Mat<double> &X,
@@ -1130,19 +1048,27 @@ void sevalg (int n,double *x,
 
 /***********************************************************************
  **********************************************************************/
-
-void sproj(int n,double *x,int *inform) {
-
-   int flag;
-
-   proj(n,x,&flag);
-
-   if ( flag != 0 ) {
-      *inform = -92;
-      reperr(*inform);
-   }
-}
-
+// void proj(int n,double *x,int *flag) {
+//    int i;
+//
+//   *flag = 0;
+//
+//    for ( i=0; i<n; i++ ) // I do not want box constrints!
+//       x[i] = max(l[i], min(x[i], u[i]));
+// }
+//
+//
+// void sproj(int n,double *x,int *inform) {
+//
+//    int flag;
+//
+//    proj(n,x,&flag);
+//
+//    if ( flag != 0 ) {
+//       *inform = -92;
+//       reperr(*inform);
+//    }
+// }
 
 
 /***********************************************************************
@@ -1168,62 +1094,44 @@ void ls(int n,double *x,
    double alpha,atmp,fmax,gtd;
 
    fmax = lastfv[0];
-   for ( i=1; i<M; i++ )
-      fmax = max (fmax, lastfv[i]);
+   for ( i=1; i<M; i++ ) fmax = max (fmax, lastfv[i]);
 
    gtd = 0.0;
-   for ( i=0; i<n; i++ )
-      gtd+= g[i] * d[i];
+   for ( i=0; i<n; i++ ) gtd+= g[i] * d[i];
 
    alpha = 1.0;
-
-   for ( i=0; i<n; i++ )
-      xnew[i] = x[i] + alpha * d[i];
-
+   for ( i=0; i<n; i++ ) xnew[i] = x[i] + alpha * d[i];
 
    sevalf(n,xnew,
            X,y,epi,mod,
-           fnew,inform);
-   // sevalf(n,xnew,fnew,inform);
-   (*fcnt)++;
+           fnew,inform); (*fcnt)++;
    if ( *inform != 0 ) return;
 
-/* Main loop */
-
-   while ( *fnew > fmax + gamma * alpha * gtd && *fcnt < maxfc ) {
-
-      /* Safeguarded quadratic interpolation */
-
-      if ( alpha <= 0.1 )
-	 alpha /= 2.0;
-
-      else {
-	 atmp = ( - gtd * alpha * alpha ) /
+///// Main loop /////
+   while ( *fnew > fmax + gamma * alpha * gtd && *fcnt < maxfc ) { // I think here is the problem
+      // Safeguarded quadratic interpolation
+      if ( alpha <= 0.1 ){
+        alpha /= 2.0;
+      }else {
+        atmp = ( - gtd * alpha * alpha ) /
   	         ( 2.0 * ( *fnew - f - alpha * gtd ) );
-
-       if ( atmp < 0.1 || atmp > 0.9 * alpha )
-	  atmp = alpha / 2.0;
-
+         if ( atmp < 0.1 || atmp > 0.9 * alpha ){
+            atmp = alpha / 2.0;
+         }
        alpha = atmp;
       }
 
-      /* New trial */
-
-      for ( i=0; i<n; i++ )
-	 xnew[i] = x[i] + alpha * d[i];
+      // New trial
+      for ( i=0; i<n; i++ ) xnew[i] = x[i] + alpha * d[i];
 
       sevalf(n,xnew,
              X,y,epi,mod,
-             fnew,inform);
-      // sevalf(n,xnew,fnew,inform);
-      (*fcnt)++;
+             fnew,inform); (*fcnt)++;
       if ( *inform != 0 ) return;
-   }
-
-/* End of main loop */
+  }
+///// End of main loop /////
 
 /* Termination flag */
-
    if ( *fnew <= fmax + gamma * alpha * gtd )
       *lsinfo = 0;
    else if ( *fcnt >= maxfc )
@@ -1295,36 +1203,28 @@ void spg(int n,double *x,
    -92: error in the user supplied proj  subroutine */
 
    int i,lsinfo;
-   double fbest,fnew,lambda,sts,sty;
+   double fbest,fnew,lambda,sts,yty,sty;
    double *d,*g,*gnew,*gp,*lastfv,*s,*xbest,*xnew,*j;
    FILE *tabline;
 
    char presentation[]=
-   "============================================================================\n"
-   " This is the SPECTRAL PROJECTED GRADIENT (SPG) for convex-constrained       \n"
-   " optimization. If you use this code, please, cite:                          \n\n"
-   " E. G. Birgin, J. M. Martinez and M. Raydan, Nonmonotone spectral projected \n"
-   " gradient methods on convex sets, SIAM Journal on Optimization 10, pp.      \n"
-   " 1196-1211, 2000, and                                                       \n\n"
-   " E. G. Birgin, J. M. Martinez and M. Raydan, Algorithm 813: SPG - software  \n"
-   " for convex-constrained optimization, ACM Transactions on Mathematical      \n"
-   " Software 27, pp. 340-349, 2001.                                            \n"
-   "============================================================================\n\n";
+  "\n============================================================================\n"
+     " Non-Additive Polygenic model (NAP) for inference of genome-wide        \n"
+     " selection coefficients under additive and non-additive fitness. \n"
+     "============================================================================\n\n";
 
-/* ==================================================================
-   Initialization
-   ================================================================== */
+   //// Initialization
 
-/* Print problem information */
+
+// Print problem information
 
    if ( iprint > 0 ) {
       printf("%s",presentation);
-      printf(" Entry to SPG.\n");
+      printf(" Entry to SPG optimization\n");
       printf(" Number of Variables: %d\n",n);
    }
 
-/* Get memory */
-
+// Get memory
    lastfv = (double *) malloc (M * sizeof(double));
    d      = (double *) malloc (n * sizeof(double));
    g      = (double *) malloc (n * sizeof(double));
@@ -1335,53 +1235,42 @@ void spg(int n,double *x,
    xnew   = (double *) malloc (n * sizeof(double));
    j      = (double *) malloc (n * sizeof(double));
 
-/* Set some initial values: */
-
-/* error tracker */
+//// Set some initial values:
+// error tracker
    *inform = 0;
-
-/* for counting number of iterations as well as functional evaluations */
+// for counting number of iterations as well as functional evaluations
    *iter = 0;
    *fcnt = 0;
+// for the non-monotone line search //
+   for ( i=0; i<M; i++ ) lastfv[i] = -1.0e+99;
 
-/* for the non-monotone line search */
-   for ( i=0; i<M; i++ )
-      lastfv[i] = -1.0e+99;
+// Project initial guess
+  // if ( iprint > 0 ) printf(" Project initial guess\n");
+  //  sproj(n,x,inform);
+  //  if ( *inform  != 0 ) return;
 
-/* Project initial guess */
-  if ( iprint > 0 ) printf(" Project initial guess\n");
-   sproj(n,x,inform);
-   if ( *inform  != 0 ) return;
-
-/* Compute function and gradient at the initial point */
-  if ( iprint > 0 ) printf(" Compute function at initial point\n");
+// Compute function and gradient at the initial point
    sevalf(n,x,
           X,y,epi,mod,
-          f,inform);
-   if ( iprint > 0 ) printf("%d\n",*f);
-   // sevalf(n,x,f,inform);
-   (*fcnt)++;
+          f,inform);  (*fcnt)++ ;
+   if ( iprint > 0 ) printf(" Function value at initial point %e\n",*f);
    if ( *inform != 0 ) return;
-
-   if ( iprint > 0 ) printf(" Compute gradient at initial point\n");
    sevalg (n,x,
            X,y,epi,mod,
            f, inform,
            g,eps);
-   // sevalg(n,x,g,inform);
-   if ( iprint > 0 ) printf("%d\n",*g);
+   if ( iprint > 0 )printf(" Compute gradient at initial point %e\n",*g);
    if ( *inform != 0 ) return;
 
-/* Store functional value for the non-monotone line search */
+// Store functional value for the non-monotone line search
    lastfv[0] = *f;
 
-/* Compute continuous-project-gradient and its sup-norm */
-
+// Compute continuous-project-gradient and its sup-norm
    for ( i=0; i<n; i++ )
       gp[i] = x[i] - g[i];
 
-   sproj(n,gp,inform);
-   if ( *inform != 0 ) return;
+   // sproj(n,gp,inform);
+   // if ( *inform != 0 ) return;
 
    *gpsupn = 0.0;
    for ( i=0; i<n; i++ ) {
@@ -1389,125 +1278,128 @@ void spg(int n,double *x,
       *gpsupn = max( *gpsupn, fabs( gp[i] ) );
    }
 
-/* Initial steplength */
+// Initial steplength //
    if ( *gpsupn != 0.0 )
       lambda = min( lmax, max( lmin, 1.0 / *gpsupn ) );
    else
       lambda = 0.0;
 
-/* Initiate best solution and functional value */
+// Initiate best solution and functional value
    fbest = *f;
 
    for ( i=0; i<n; i++ )
       xbest[i] = x[i];
 
-/* Print initial information */
-
+// Print initial information //
    if ( iprint >  0 ) {
-      if ( (*iter) % 10 == 0 )
-	 printf("\n ITER\t F\t\t GPSUPNORM\n");
+       printf("\n ITER\t F\t\t GPSUPNORM\n");
       printf(" %d\t %e\t %e\n",*iter,*f,*gpsupn);
    }
-
-   tabline = fopen ("spg-tabline.out", "w");
-   fprintf(tabline, "%d %d %d %e %e",n,*iter,*fcnt,*f,*gpsupn);
-   fclose(tabline);
 
 /* ==================================================================
    Main loop
    ================================================================== */
 
-
+   // while( *gpsupn > epsopt && *iter < maxit && *fcnt < maxfc ) {
    while( *gpsupn > epsopt && *iter < maxit && *fcnt < maxfc ) {
+    // in R there is also ftol, the change between successive f iterations
 
-      /* Iteration */
+      // Iteration
       (*iter)++;
 
-      /* Compute search direction */
+      // Compute search direction
+      for ( i=0; i<n; i++ ) d[i] = x[i] - lambda * g[i];
 
-      for ( i=0; i<n; i++ )
-	 d[i] = x[i] - lambda * g[i];
+      // sproj(n,d,inform);
+      // if ( *inform != 0 ) return;
 
-      sproj(n,d,inform);
-      if ( *inform != 0 ) return;
+      for ( i=0; i<n; i++ ) d[i]-= x[i];
 
-      for ( i=0; i<n; i++ )
-	 d[i]-= x[i];
-
-      /* Perform safeguarded quadratic interpolation along the
-	 spectral continuous projected gradient */
+      // Perform safeguarded quadratic interpolation along the
+      //spectral continuous projected gradient
 
       ls(n,x,X,y,epi,mod,*f,g,d,lastfv,maxfc,fcnt,&fnew,xnew,&lsinfo,inform);
       if ( *inform != 0 ) return;
 
-      /* Set new functional value and save it for the non-monotone
-	 line search */
-
+      // Set new functional value and save it for the non-monotone line search
       *f = fnew;
       lastfv[(*iter) % M] = *f;
 
-      /* Gradient at the new iterate */
-
+      // Gradient at the new iterate
       sevalg (n,xnew,
            X,y,epi,mod,
            f, inform,
            gnew,eps);
-      // sevalg(n,xnew,gnew,inform);
       if ( *inform != 0 ) return;
 
-      /* Compute s = xnew - x and y = gnew - g, <s,s>, <s,y>, the
-         continuous-projected-gradient and its sup-norm */
+      // // bug check
+      // for( i=0; i<5; i++ ) std::cout << "gnew" << gnew[i] << std::endl;
+      // // bug check
 
+      // Compute s = xnew - x and y = gnew - g, <s,s>, <s,y>, the
+      //   continuous-projected-gradient and its sup-norm
       sts = 0.0;
       sty = 0.0;
+      yty = 0.0;
       for ( i=0; i<n; i++ ) {
-	 s[i]  = xnew[i] - x[i];
-	 j[i]  = gnew[i] - g[i];
-	 sts  += s[i] * s[i];
-	 sty  += s[i] * j[i];
-	 x[i]  = xnew[i];
-	 g[i]  = gnew[i];
-	 gp[i] = x[i] - g[i];
+        s[i]  = xnew[i] - x[i];
+        j[i]  = gnew[i] - g[i];
+        sts  += s[i] * s[i];
+        yty  += j[i] * j[i];
+        sty  += s[i] * j[i];
+        x[i]  = xnew[i];
+        g[i]  = gnew[i];
+        gp[i] = x[i] - g[i];
       }
 
-      sproj(n,gp,inform);
-      if ( *inform != 0 ) return;
+      // sproj(n,gp,inform);
+      // if ( *inform != 0 ) return;
 
       *gpsupn = 0.0;
       for ( i=0; i<n; i++ ) {
-	 gp[i] -= x[i];
-	 *gpsupn = max( *gpsupn, fabs( gp[i] ) );
+        gp[i] -= x[i];
+        *gpsupn = max( *gpsupn, fabs( gp[i] ) );
       }
 
-      /* Spectral steplength */
+      // Spectral steplength // Different in R version
+        /*  if (method == 1)
+              lambda <- if (sts == 0 | sty < 0)
+                  lmax
+              else min(lmax, max(lmin, sts/sty))
+          else if (method == 2)
+              lambda <- if (sty < 0 | yty == 0)
+                  lmax
+              else min(lmax, max(lmin, sty/yty))
+          else if (method == 3) # DEFAULT
+              lambda <- if (sts == 0 | yty == 0)
+                  lmax
+              else min(lmax, max(lmin, sqrt(sts/yty))) */
+      // Original
+      /*if ( sty <= 0 ) {
+        lambda = lmax;
+      }else{
+        lambda = max( lmin, min( sts / sty, lmax ) );
+      }*/
+      // Trying to implement mehtod 3
+      if (sts == 0 || yty == 0){
+        lambda = lmax;
+      }else{
+        lambda = min(lmax, max(lmin, sqrt(sts/yty)));
+      }
 
-      if ( sty <= 0 )
-	 lambda = lmax;
-      else
-	 lambda = max( lmin, min( sts / sty, lmax ) );
-
-      /* Best solution and functional value */
-
+      // Best solution and functional value
       if ( *f < fbest ) {
-	 fbest = *f;
-
-	 for ( i=0; i<n; i++ )
-	    xbest[i] = x[i];
+        fbest = *f;
+        for ( i=0; i<n; i++ )xbest[i] = x[i];
       }
 
-      /* Print iteration information */
-
+      // Print iteration information
       if ( iprint >  0 ) {
-	 if ( (*iter) % 10 == 0 )
-	    printf("\n ITER\t F\t\t GPSUPNORM\n");
-	 printf(" %d\t %e\t %e\n",*iter,*f,*gpsupn);
+        if ( (*iter) % 10 == 0 ){
+          printf(" %d\t %e\t %e\n",*iter,*f,*gpsupn);
+        }
       }
-
-      tabline = fopen ("spg-tabline.out", "w");
-      fprintf(tabline, "%d %d %d %e %e",n,*iter,*fcnt,*f,*gpsupn);
-      fclose(tabline);
    }
-
 /* ==================================================================
    End of main loop
    ================================================================== */
@@ -1530,7 +1422,6 @@ void spg(int n,double *x,
    }
 
 /* Free memory */
-
    free(lastfv);
    free(d);
    free(g);
@@ -1563,40 +1454,10 @@ void spg(int n,double *x,
 }
 
 
-
-/* =================================================================
-   File: spgma.c
-   =================================================================
-
-   =================================================================
-   Module: Spectral Projected Gradient. Main program.
-   =================================================================
-
-   Last update of any of the component of this module:
-
-   March 14, 2008.
-
-   Users are encouraged to download periodically updated versions of
-   this code at the TANGO Project web page:
-
-   www.ime.usp.br/~egbirgin/tango/
-
-   =================================================================
-   ================================================================= */
-
-#include<stdlib.h>
-#include<stdio.h>
-
-
-/* Global variables that describe the convex set (a box in this
-   case). They will be used by the projection subroutine. */
-
-double *l,*u;
-
 ////////////////////////////////////////////////////////////////////////////////
 /* Main program */
 // [[Rcpp::export]]
-int napSPG_C(/* input data */
+Rcpp::List napspgC(/* input data */
             std::string bedfile,
             int N, int p,
             const arma::uvec & myrows,
@@ -1605,65 +1466,89 @@ int napSPG_C(/* input data */
             arma::vec par,
             double epi,
             double mod,
-            int maxit=20
+            int maxit=20,
+            bool verbose=1
             ){
    ///////////////////////////////////////////////
-   std::cout << "Initializing objects" <<std::endl;
+   // std::cout << "Initializing objects" <<std::endl;
    int fcnt,iprint,i,inform,iter,maxfc,n,spginfo;
    double epsopt,f,gpsupn,*x;
    double eps;
-   FILE *fp;
    n = par.n_elem ;
-   iprint = 1;
-   maxfc  = 10 * maxit;
-   epsopt = 1.0e-06;
+   iprint = verbose;
+   maxfc  = 10000;
+   epsopt = 1.0e-05;
    eps= 1.0e-07;
 
-   //* Get memory */
+   // Get memory
    x = (double *) malloc ( n * sizeof(double));
-   l = (double *) malloc ( n * sizeof(double));
-   u = (double *) malloc ( n * sizeof(double));
-
-   /* Define bounds */
-   for ( i=0; i<n; i++ ) {
-      l[i] = -100.0;
-      u[i] =  +100.0;
-   }
+   // l = (double *) malloc ( n * sizeof(double));
+   // u = (double *) malloc ( n * sizeof(double));
+   // Define bounds
+   // for ( i=0; i<n; i++ ) {
+   //    l[i] = -Inf;
+   //    u[i] =  Inf;
+   // }
 
   // Define initial Guess //
    for ( i=0; i<n; i++ )
       x[i] = par[i];
    ///////////////////////////////////////////////
-   std::cout << "Reading .bed file" <<std::endl;
+   // Get genome matrix
+    if(verbose) std::cout << " Reading .bed file (missing data as reference)" <<std::endl;
    //* load matrix */
     arma::Mat<double> X = readbed(bedfile,N,p,myrows, mycols);
     std::cout << "Analysing " <<  X.n_rows << " individuals and " <<
               X.n_cols << " variants" <<std::endl;
-    ///////////////////////////////////////////////
-    std::cout << "SPG optimization" <<std::endl;
-   // Call SPG //
-   // spg(n,x,epsopt,maxit,maxfc,iprint,&f,&gpsupn,&iter,&fcnt,&spginfo,&inform);
-   spg(n,x,X,y,epi,mod,epsopt,maxit,maxfc,iprint,&f,&gpsupn,&iter,&fcnt,&spginfo,&inform,eps);
-
    ///////////////////////////////////////////////
-    std::cout << "Wrapping up" <<std::endl;
-   // Save solution
-   fp = fopen ("solution.txt","w");
-   for ( i=0; i<n; i++ )
-      // fprintf(fp,"x[%d] = %e\n",i, x[i]);
-      fprintf(fp,"%e\n",x[i]);
-   fclose(fp);
+   // Call SPG //
+   spg(n,x,X,y,epi,mod,epsopt,maxit,maxfc,iprint,&f,&gpsupn,&iter,&fcnt,&spginfo,&inform,eps);
+    // std::cout << "Finished" <<std::endl;
 
-   // Save statistics
-   fp = fopen ("spg-tabline.out","w");
-   fprintf(fp,"params iter #feval fval gpsupn spginfo\n");
-   fprintf(fp,"%d %d %d %e %e %d\n",n,iter,fcnt,f,gpsupn,spginfo);
-   fclose(fp);
+  ///////////////////////////////////////////////
+  // get solutions
+   std::cout << "Calculating solutions" <<std::endl;
+   arma::uvec allrows(N,arma::fill::zeros);
+   X = readbed(bedfile,N,p,allrows, mycols); // dummy variable so no subset
 
-   /* Free memory */
-   free(x);
-   free(l);
-   free(u);
+  double b,a,pi,mu;
+  arma::vec sel(n-4,arma::fill::zeros);
+  arma::vec w;
 
-return 0;
+  b=iptr(x[n-4]);
+  a=iptr(x[n-3]);
+  pi=iptr05(x[n-2]);
+  mu=iptr2(x[n-1]);
+  for ( i=0; i<sel.n_elem; i++ ) sel[i] = iseltr(x[i]);
+  w = mu * wC(X, sel,mod,epi);
+
+  ///////////////////////////////////////////////
+   // Free memory //
+  // get vector of fitness
+	return Rcpp::List::create(
+	                    Rcpp::Named("s") = sel,
+	                    Rcpp::Named("a") = a,
+	                    Rcpp::Named("b") = b,
+	                    Rcpp::Named("p") = pi,
+	                    Rcpp::Named("mu") = mu,
+	                    Rcpp::Named("w") = w,
+	          					Rcpp::Named("f") = f);
+}
+
+
+// [[Rcpp::export]]
+arma::vec polyscore(std::string bedfile,
+                    int N, int p,
+                    const arma::vec betas,
+                    const arma::uvec & mycols,
+                    double mu=1,
+                    double mod=1,
+                    double epi=1
+                    ){
+  arma::Mat<double> X(N,p);
+  arma::uvec allrows(N) ;
+  arma::vec w;
+  X=readbed(bedfile,N,p,allrows,mycols);
+  w = mu * wC(X, betas,mod,epi);
+  return w;
 }

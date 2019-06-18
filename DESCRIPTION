@@ -8,8 +8,7 @@ Depends: R (>= 3.3.1)
 License: MIT
 Encoding: UTF-8
 LazyData: true
-LinkingTo: Rcpp, RcppArmadillo, RcppEigen, BH, bigmemory
-Imports: Rcpp, cowplot, ggplot2, devtools, tidyverse, bigmemory, moiR, data.table
-Suggests: cowplot, coda, latex2exp
+LinkingTo: Rcpp, RcppArmadillo, BH, bigmemory
+Imports: Rcpp, devtools, tidyverse, moiR, data.table
+Suggests: latex2exp, ggplot2, cowplot
 SystemRequirements: C++11
-RoxygenNote: 6.0.1
